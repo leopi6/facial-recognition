@@ -1,70 +1,83 @@
 """
-@Time ： 2024/01/28 11:34
-@Author ：李颢
-@File ：CNN.py
-@Motto：GO UP
-
+@Time   : 2024/01/28 11:34
+@Author : 李颢
+@File   : CNN.py
+@Motto  : GO UP
 """
+
+import os
 from collections import defaultdict
 from random import random
 
 import torch
+import numpy as np
 from sklearn.model_selection import train_test_split
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-import numpy as np
-import os
 
 
-def Myloader(path):
+def Myloader(path: str) -> Image.Image:
+    """
+    加载图像并转换为 RGB 模式。
+    :param path: 图像文件路径
+    :return: PIL Image 对象 (RGB)
+    """
     return Image.open(path).convert('RGB')
 
-# get a list of paths and labels.
 
-def check_edge_index(edge_index):
-    max = edge_index.max()    
-    if  max >= 468:
+def check_edge_index(edge_index: torch.Tensor) -> bool:
+    """
+    检查图数据中的边信息是否满足某些约束 (edge_index.max() < 468)。
+    :param edge_index: 图数据的边信息
+    :return: bool 值，True 表示可用，False 表示不可用
+    """
+    max_val = edge_index.max()
+    return (max_val < 468)
 
-        return False
-    else :
-        return True
 
-# 在使用时调用这个函数并提供相应的参数
-
-def init_process(path_list,lens,choice):
+def init_process(path_list: list, length: int, choice: str):
+    """
+    根据文件路径列表，将其转换为 (path, label) 或 PyTorch 图数据(.pt)。
+    :param path_list: 文件路径列表
+    :param length: 文件数
+    :param choice: '0' 表示图像数据, '1' 表示图数据(.pt)
+    :return: list, 元素要么是 [path, label], 要么是含 y 属性的图数据
+    """
     if choice == '0':
-        data = [] 
-        for i in range(lens):
+        # 处理图像数据
+        data = []
+        for i in range(length):
             label = find_label(path_list[i])
             data.append([path_list[i], label])
     else:
+        # 处理图数据
         data = []
-        for i in range(lens):
+        for i in range(length):
             label = find_label(path_list[i])
-            da = torch.load(path_list[i])
+            da = torch.load(path_list[i])  # 加载 .pt 文件
             da.y = label
-            
-            
-                
             data.append(da)
-
-        
-
     return data
 
 
-    
-
 class MyDataset(Dataset):
-    def __init__(self, data, transform, loader):
+    """
+    对图像文件进行自定义 Dataset 封装。
+    """
+    def __init__(self, data: list, transform: transforms.Compose, loader=Myloader):
+        """
+        :param data: [(path, label), ...]
+        :param transform: torchvision.transforms 的预处理流程
+        :param loader: 加载图像函数，默认使用 Myloader
+        """
         self.data = data
         self.transform = transform
         self.loader = loader
 
-    def __getitem__(self, item):
-        img, label = self.data[item]
-        img = self.loader(img)
+    def __getitem__(self, index: int):
+        img_path, label = self.data[index]
+        img = self.loader(img_path)
         img = self.transform(img)
         return img, label
 
@@ -72,31 +85,37 @@ class MyDataset(Dataset):
         return len(self.data)
 
 
-def find_label(file_path):
+def find_label(file_path: str) -> int:
     """
-    Find image tags based on file paths.
-
-    :param str: file path
-    :return: image label
+    根据文件路径推断其标签。以文件名最后的 '_数字' 作为标签依据。
+    :param file_path: 文件路径
+    :return: 标签 0 / 1 / 2
     """
-
     pure_path = os.path.splitext(file_path)
-    f = pure_path[0]
-    f= f.split('_')
-    label = f[-1]
-  
-    if label in {'1','2','3'}:
-        label=0
-    elif label in {'4','5','6'}:
-        label=1
-    else:label=2
-    return int(label)
+    f = pure_path[0].split('_')
+    label_str = f[-1]
+
+    if label_str in {'1', '2', '3'}:
+        return 0
+    elif label_str in {'4', '5', '6'}:
+        return 1
+    else:
+        return 2
 
 
+def load_data_5(choice: str):
+    """
+    加载 bitter（苦味）相关的数据，分为训练集 + 测试集，
+    若 choice='0' 则返回图像 DataLoader(Dtr, Val, Dte)，若 choice='1' 则返回图数据形式(train_data, test_data)。
 
-
-def load_data_5(choice):
+    :param choice: '0' 表示图像数据(.jpg)，'1' 表示图数据(.pt)
+    :return:
+        - 如果 choice='1'，返回 train_data, test_data
+        - 否则，返回 Dtr, Val, Dte (三个 DataLoader)
+    """
     print('data processing...')
+
+    # ======== 图像预处理 (仅当 choice='0' 时使用) ========
     transform = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.3),
         transforms.RandomVerticalFlip(p=0.3),
@@ -104,227 +123,110 @@ def load_data_5(choice):
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))  # normalization
     ])
-    
-    #这里一定要改好！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！！
-    data = []
-    name_list1=[]
-    name_list2=[]
+
     path_list1 = []
     path_list2 = []
+
+    # ========== 训练集 (i in [0..57]) ==========
     for i in range(58):
         for concentration in range(8):
-            
-            ##因为浓度 有部分没有8这个文件夹，所以要检测是否有8这个文件夹，分不同情况处理！！！
+            # 判断 bitter/8 文件夹是否存在
             if choice == '0':
                 file_path_8 = f'D:/code/reach/data/training_datax/{i+1}/bitter/8'
             else:
                 file_path_8 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/8'
-    
+
             if os.path.isdir(file_path_8):
-                #训练目录
-                if choice == '0':    
+                # 若该路径存在，说明存在 [1..8] 各浓度
+                if choice == '0':
                     image_folder1 = f'D:/code/reach/data/training_datax/{i+1}/bitter/{concentration+1}'
                 else:
                     image_folder1 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/{concentration+1}'
                 for filename in os.listdir(image_folder1):
                     if choice == '0':
                         if filename.endswith('.jpg'):
-                            name_list1.append(filename)
-                            path = os.path.join(image_folder1,filename)
-                            path_list1.append(path)
+                            path_list1.append(os.path.join(image_folder1, filename))
                     else:
                         if filename.endswith('.pt'):
-                            name_list1.append(filename)
-                            path = os.path.join(image_folder1,filename)
-                            path_list1.append(path)
-
-                
+                            path_list1.append(os.path.join(image_folder1, filename))
             else:
-                if concentration+1 < 8:
-                    #训练目录
-                    if choice == '0':    
+                # 若文件夹不存在，则说明该浓度不足 8，仅遍历 [1..7]
+                if (concentration + 1) < 8:
+                    if choice == '0':
                         image_folder1 = f'D:/code/reach/data/training_datax/{i+1}/bitter/{concentration+1}'
                     else:
                         image_folder1 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/{concentration+1}'
-                    for filename in os.listdir(image_folder1):
-                        if choice == '0':
-                            if filename.endswith('.jpg'):
-                                name_list1.append(filename)
-                                path = os.path.join(image_folder1,filename)
-                                path_list1.append(path)
-                        else:
-                            if filename.endswith('.pt'):
-                                name_list1.append(filename)
-                                path = os.path.join(image_folder1,filename)
-                                path_list1.append(path)
+                    if os.path.isdir(image_folder1):
+                        for filename in os.listdir(image_folder1):
+                            if choice == '0':
+                                if filename.endswith('.jpg'):
+                                    path_list1.append(os.path.join(image_folder1, filename))
+                            else:
+                                if filename.endswith('.pt'):
+                                    path_list1.append(os.path.join(image_folder1, filename))
                 else:
                     break
-    
-    data1 = init_process(path_list1, len(path_list1),choice)
 
-    for i in range(58,72):
+    # ========== 测试集 (i in [58..71]) ==========
+    for i in range(58, 72):
         for concentration in range(8):
             if choice == '0':
                 file_path_8 = f'D:/code/reach/data/testing_datax/{i+1}/bitter/8'
             else:
                 file_path_8 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/8'
-            if os.path.isdir(file_path_8):
 
-               #测试目录   
-                if choice == '0':    
+            if os.path.isdir(file_path_8):
+                if choice == '0':
                     image_folder1 = f'D:/code/reach/data/testing_datax/{i+1}/bitter/{concentration+1}'
                 else:
                     image_folder1 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/{concentration+1}'
-                for filename in os.listdir(image_folder1):
-                    if choice == '0':
-                        if filename.endswith('.jpg'):
-                            name_list2.append(filename)
-                            path = os.path.join(image_folder1,filename)
-                            path_list2.append(path)
-                    else:
-                        if filename.endswith('.pt'):
-                            name_list2.append(filename)
-                            path = os.path.join(image_folder1,filename)
-                            path_list2.append(path)
-                        
-            else:
-                if concentration+1 < 8:
-                    #测试目录
-                    if choice == '0':    
-                        image_folder1 = f'D:/code/reach/data/testing_datax/{i+1}/bitter/{concentration+1}'
-                    else:
-                        image_folder1 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/{concentration+1}'
+                if os.path.isdir(image_folder1):
                     for filename in os.listdir(image_folder1):
                         if choice == '0':
                             if filename.endswith('.jpg'):
-                                name_list2.append(filename)
-                                path = os.path.join(image_folder1,filename)
-                                path_list2.append(path)
+                                path_list2.append(os.path.join(image_folder1, filename))
                         else:
                             if filename.endswith('.pt'):
-                                name_list2.append(filename)
-                                path = os.path.join(image_folder1,filename)
-                                path_list2.append(path)
+                                path_list2.append(os.path.join(image_folder1, filename))
+            else:
+                if (concentration + 1) < 8:
+                    if choice == '0':
+                        image_folder1 = f'D:/code/reach/data/testing_datax/{i+1}/bitter/{concentration+1}'
+                    else:
+                        image_folder1 = f'D:/code/reach/data/data_face_landmarker/{i+1}/bitter/{concentration+1}'
+                    if os.path.isdir(image_folder1):
+                        for filename in os.listdir(image_folder1):
+                            if choice == '0':
+                                if filename.endswith('.jpg'):
+                                    path_list2.append(os.path.join(image_folder1, filename))
+                            else:
+                                if filename.endswith('.pt'):
+                                    path_list2.append(os.path.join(image_folder1, filename))
                 else:
-                    break  
-    
-    data2 = init_process(path_list2, len(path_list2),choice)
+                    break
 
+    # ========== 将路径列表转换为带标签的数据 ==========
+    data1 = init_process(path_list1, len(path_list1), choice)
+    data2 = init_process(path_list2, len(path_list2), choice)
     data = data1 + data2
 
-    # 若为图数据则直接返回
+    # ========== 如果是图数据，直接返回 train_data, test_data ==========
     if choice == '1':
-        now_data = data1 + data2  # + data3 + data4   # 1400
-        data = []
+        now_data = data  # data1 + data2
+        filtered_data = []
         for item in now_data:
+            # 如果最高边索引 >= 节点总数，则跳过该图
             if item.edge_index.max() >= item.num_nodes:
                 continue
-            data.append(item)
+            filtered_data.append(item)
 
-        '''for item in now_data:
-            if isinstance(item, tuple):  # 如果数据是图像数据
-                data.append(item)
-            elif check_edge_index(item.edge_index):  # 如果数据是图数据
-                data.append(item)'''
-
+        # 按标签分类
         label_indices = defaultdict(list)
-        for i, sample in enumerate(data):
-            if isinstance(sample, tuple):  # 如果数据是图像数据
+        for i, sample in enumerate(filtered_data):
+            if isinstance(sample, tuple):
                 label = sample[1]
-            else:  # 如果数据是图数据
+            else:
                 label = sample.y
             label_indices[label].append(i)
 
-        trainset = []
-        testset = []
-        test_size = 0.2
-
-        for label, indices in label_indices.items():
-            train_indices, test_indices = train_test_split(indices, test_size=test_size)
-            trainset.extend(train_indices)
-            testset.extend(test_indices)
-
-        train_data = [data[i] for i in trainset]
-        test_data = [data[i] for i in testset]
-
-        train_label_counts = defaultdict(int)
-        test_label_counts = defaultdict(int)
-
-        for sample in train_data:
-            if isinstance(sample, tuple):
-                label = sample[1]
-            else:
-                label = sample.y
-            train_label_counts[label] += 1
-
-        for sample in test_data:
-            if isinstance(sample, tuple):
-                label = sample[1]
-            else:
-                label = sample.y
-            test_label_counts[label] += 1
-
-        print("训练集中每个标签的数量：")
-        for label, count in train_label_counts.items():
-            print(f"标签 {label} 的数量: {count}")
-
-        print("\n测试集中每个标签的数量：")
-        for label, count in test_label_counts.items():
-            print(f"标签 {label} 的数量: {count}")
-
-        return train_data, test_data
-
-        return train_data, test_data
-
-    # 训练集和测试集的划分比例
-    train_ratio = 0.6  # 训练集比例
-    val_ratio = 0.2  # 验证集比例，测试集比例为 1 - train_ratio - val_ratio
-
-    # 获取每个标签的数据
-    label_data = defaultdict(list)
-    for img, label in data:
-        label_data[label].append((img, label))
-
-    # 初始化训练集、验证集和测试集
-    train_data = []
-    val_data = []
-    test_data = []
-
-    # 将每个标签的数据划分为训练集、验证集和测试集
-    for label, data_list in label_data.items():
-        num_samples = len(data_list)
-        num_train = int(train_ratio * num_samples)
-        num_val = int(val_ratio * num_samples)
-
-        train_data.extend(data_list[:num_train])
-        val_data.extend(data_list[num_train:num_train + num_val])
-        test_data.extend(data_list[num_train + num_val:])
-
-    # 将训练集、验证集和测试集转换为 DataLoader 对象
-    train_dataset = MyDataset(train_data, transform=transform, loader=Myloader)
-    val_dataset = MyDataset(val_data, transform=transform, loader=Myloader)
-    test_dataset = MyDataset(test_data, transform=transform, loader=Myloader)
-    label_counts = {0: 0, 1: 0, 2: 0}
-
-    # 统计每个标签的数据数量
-    for img, label in train_dataset:
-        label_counts[label] += 1
-
-    # 打印结果
-    for label, count in label_counts.items():
-        print(f"训练标签 {label} 的数据数量为: {count}")
-
-    label_counts = {0: 0, 1: 0, 2: 0}
-    for img, label in test_dataset:
-        label_counts[label] += 1
-
-    # 打印结果
-    for label, count in label_counts.items():
-        print(f"测试标签 {label} 的数据数量为: {count}")
-
-    Dtr = DataLoader(dataset=train_dataset, batch_size=32, shuffle=True, num_workers=0)
-    Val = DataLoader(dataset=val_dataset, batch_size=32, shuffle=True, num_workers=0)
-    Dte = DataLoader(dataset=test_dataset, batch_size=32, shuffle=True, num_workers=0)
-
-    return Dtr, Val, Dte
-
+        # 按标签
