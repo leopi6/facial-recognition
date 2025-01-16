@@ -1,5 +1,5 @@
 ![](https://img.shields.io/badge/cnn-classification%20-orange)
-# cnn-dogs-vs-cats
+# PK research
 Implementation of facial recognition
 # Environment
 torch==1.10.1+cu111
